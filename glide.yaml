@@ -6,8 +6,8 @@ import:
       - etcd
   - package: github.com/mailgun/log
     ref:     44874009257d4d47ba9806f1b7f72a32a015e4d8
-  - package: github.com/containous/oxy
-    ref:     021f82bd8260ba15f5862a9fe62018437720dff5
+  - package: github.com/goguardian/oxy
+    ref:     8034fd093cc5a5a59ec6f8d3e11132587fd17e5d
     subpackages:
       - cbreaker
       - forward

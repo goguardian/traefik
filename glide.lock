@@ -21,8 +21,8 @@ imports:
   version: bf4a526f48af7badd25d2cb02d587e1b01be3b50
 - name: github.com/codegangsta/negroni
   version: c7477ad8e330bef55bf1ebe300cf8aa67c492d1b
-- name: github.com/containous/oxy
-  version: 021f82bd8260ba15f5862a9fe62018437720dff5
+- name: github.com/goguardian/oxy
+  version: 8034fd093cc5a5a59ec6f8d3e11132587fd17e5d
   subpackages:
   - cbreaker
   - forward
