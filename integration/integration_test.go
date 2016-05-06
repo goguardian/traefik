@@ -23,6 +23,7 @@ func Test(t *testing.T) {
 
 func init() {
 	check.Suite(&SimpleSuite{})
+	check.Suite(&AccessLogSuite{})
 	check.Suite(&HTTPSSuite{})
 	check.Suite(&FileSuite{})
 	check.Suite(&DockerSuite{})
@@ -63,7 +64,11 @@ func (s *BaseSuite) adaptFileForHost(c *check.C, path string) string {
 		// Default docker socket
 		dockerHost = "unix:///var/run/docker.sock"
 	}
+	tempObjects := struct{ DockerHost string }{dockerHost}
+	return s.adaptFile(c, path, tempObjects)
+}
 
+func (s *BaseSuite) adaptFile(c *check.C, path string, tempObjects interface{}) string {
 	// Load file
 	tmpl, err := template.ParseFiles(path)
 	c.Assert(err, checker.IsNil)
@@ -73,7 +78,7 @@ func (s *BaseSuite) adaptFileForHost(c *check.C, path string) string {
 	c.Assert(err, checker.IsNil)
 	defer tmpFile.Close()
 
-	err = tmpl.ExecuteTemplate(tmpFile, prefix, struct{ DockerHost string }{dockerHost})
+	err = tmpl.ExecuteTemplate(tmpFile, prefix, tempObjects)
 	c.Assert(err, checker.IsNil)
 	err = tmpFile.Sync()
 

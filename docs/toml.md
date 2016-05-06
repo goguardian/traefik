@@ -122,6 +122,12 @@
 ## ACME (Let's Encrypt) configuration
 
 ```toml
+# Sample entrypoint configuration when using ACME
+[entryPoints]
+  [entryPoints.https]
+  address = ":443"
+    [entryPoints.https.tls]
+
 # Enable ACME (Let's Encrypt): automatic SSL
 #
 # Optional
@@ -166,6 +172,7 @@ entryPoint = "https"
 
 # Domains list
 # You can provide SANs (alternative domains) to each main domain
+# All domains must have A/AAAA records pointing to Traefik
 # WARNING, Take note that Let's Encrypt have rate limiting: https://community.letsencrypt.org/t/quick-start-guide/1631
 # Each domain & SANs will lead to a certificate request.
 #
@@ -258,7 +265,7 @@ defaultEntryPoints = ["http", "https"]
     rule = "Path:/test"
 ```
 
-- or put your rules in a separate file, for example `rules.tml`:
+- or put your rules in a separate file, for example `rules.toml`:
 
 ```toml
 # traefik.toml
@@ -613,6 +620,37 @@ Labels can be used on containers to override default behaviour:
 - `traefik.frontend.passHostHeader=true`: forward client `Host` header to the backend.
 - `traefik.frontend.entryPoints=http,https`: assign this frontend to entry points `http` and `https`. Overrides `defaultEntryPoints`.
 * `traefik.domain=traefik.localhost`: override the default domain
+
+
+## Kubernetes Ingress backend
+
+
+Træfɪk can be configured to use Kubernetes Ingress as a backend configuration:
+
+```toml
+################################################################
+# Kubernetes Ingress configuration backend
+################################################################
+# Enable Kubernetes Ingress configuration backend
+#
+# Optional
+#
+[kubernetes]
+
+# Kubernetes server endpoint
+#
+# When deployed as a replication controller in Kubernetes,
+# Traefik will use env variable KUBERNETES_SERVICE_HOST
+# and KUBERNETES_SERVICE_PORT_HTTPS as endpoint
+# Secure token will be found in /var/run/secrets/kubernetes.io/serviceaccount/token
+# and SSL CA cert in /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+# 
+# Optional
+#
+# endpoint = "http://localhost:8080"
+```
+
+You can find here an example [ingress](https://raw.githubusercontent.com/containous/traefik/master/examples/k8s.ingress.yaml) and [replication controller](https://raw.githubusercontent.com/containous/traefik/master/examples/k8s.rc.yaml).
 
 ## Consul backend
 

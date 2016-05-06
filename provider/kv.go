@@ -38,19 +38,44 @@ type KvTLS struct {
 	InsecureSkipVerify bool
 }
 
-func (provider *Kv) watchKv(configurationChan chan<- types.ConfigMessage, prefix string, stop chan bool) {
-	operation := func() error {
-		events, err := provider.kvclient.WatchTree(provider.Prefix, make(chan struct{}) /* stop chan */)
-		if err != nil {
-			log.Errorf("Failed to WatchTree %s", err)
-			return err
+// watchKv performs a watch on the given key prefix. Any time a change event happens on any keys matching
+// the prefix, a new configuration is loaded and sent to configurationChan. This method will either
+// return an error if the KV connection fails (after backoff/retry) or run perpetually until a stop message
+// is sent on the stop chan.
+func (provider *Kv) watchKv(configurationChan chan<- types.ConfigMessage, prefix string, stop chan bool) error {
+	var events <-chan []*store.KVPair
+
+	for {
+		select {
+		case <-stop:
+			return nil
+		default: // noop
 		}
-		for {
+
+		operation := func() error {
+			if events == nil {
+				var err error
+				events, err = provider.kvclient.WatchTree(provider.Prefix, make(chan struct{}))
+				if err != nil {
+					return err
+				}
+			}
+
+			// Reading from the events chan may block indefinitely if there are no events,
+			// however, the operation must return relatively quickly in order for backoff.RetryNotify
+			// to work as expected. Here, we add a timeout to protect operation from running too long.
+			timeout := make(chan bool, 1)
+			go func() {
+				time.Sleep(1 * time.Second)
+				timeout <- true
+			}()
+
 			select {
-			case <-stop:
+			case <-timeout:
 				return nil
 			case _, ok := <-events:
 				if !ok {
+					events = nil
 					return errors.New("watchtree channel closed")
 				}
 				configuration := provider.loadConfig()
@@ -61,15 +86,18 @@ func (provider *Kv) watchKv(configurationChan chan<- types.ConfigMessage, prefix
 					}
 				}
 			}
+			return nil
 		}
-	}
 
-	notify := func(err error, time time.Duration) {
-		log.Errorf("KV connection error %+v, retrying in %s", err, time)
-	}
-	err := backoff.RetryNotify(operation, backoff.NewExponentialBackOff(), notify)
-	if err != nil {
-		log.Fatalf("Cannot connect to KV server %+v", err)
+		notify := func(err error, time time.Duration) {
+			log.Errorf("KV watch connection error: %+v, retrying in %s", err, time)
+		}
+		b := backoff.NewExponentialBackOff()
+		b.MaxElapsedTime = 0 // Keep backing off forever
+		err := backoff.RetryNotify(operation, b, notify)
+		if err != nil {
+			return fmt.Errorf("Cannot connect to KV server: %v", err)
+		}
 	}
 }
 
@@ -112,15 +140,18 @@ func (provider *Kv) provide(configurationChan chan<- types.ConfigMessage, pool *
 			storeConfig,
 		)
 		if err != nil {
-			return err
+			return fmt.Errorf("Failed to Connect to KV store: %v", err)
 		}
-		if _, err := kv.List(""); err != nil {
-			return err
+		if _, err := kv.Exists("qmslkjdfmqlskdjfmqlksjazçueznbvbwzlkajzebvkwjdcqmlsfj"); err != nil {
+			return fmt.Errorf("Failed to test KV store connection: %v", err)
 		}
 		provider.kvclient = kv
 		if provider.Watch {
 			pool.Go(func(stop chan bool) {
-				provider.watchKv(configurationChan, provider.Prefix, stop)
+				err := provider.watchKv(configurationChan, provider.Prefix, stop)
+				if err != nil {
+					log.Errorf("Cannot watch KV store: %v", err)
+				}
 			})
 		}
 		configuration := provider.loadConfig()
@@ -131,11 +162,11 @@ func (provider *Kv) provide(configurationChan chan<- types.ConfigMessage, pool *
 		return nil
 	}
 	notify := func(err error, time time.Duration) {
-		log.Errorf("KV connection error %+v, retrying in %s", err, time)
+		log.Errorf("KV connection error: %+v, retrying in %s", err, time)
 	}
 	err := backoff.RetryNotify(operation, backoff.NewExponentialBackOff(), notify)
 	if err != nil {
-		log.Fatalf("Cannot connect to KV server %+v", err)
+		return fmt.Errorf("Cannot connect to KV server: %v", err)
 	}
 	return nil
 }
@@ -170,7 +201,7 @@ func (provider *Kv) list(keys ...string) []string {
 	}
 	directoryKeys := make(map[string]string)
 	for _, key := range keysPairs {
-		directory := strings.Split(strings.TrimPrefix(key.Key, strings.TrimPrefix(joinedKeys, "/")), "/")[0]
+		directory := strings.Split(strings.TrimPrefix(key.Key, joinedKeys), "/")[0]
 		directoryKeys[directory] = joinedKeys + directory
 	}
 	return fun.Values(directoryKeys).([]string)
@@ -178,7 +209,7 @@ func (provider *Kv) list(keys ...string) []string {
 
 func (provider *Kv) get(defaultValue string, keys ...string) string {
 	joinedKeys := strings.Join(keys, "")
-	keyPair, err := provider.kvclient.Get(joinedKeys)
+	keyPair, err := provider.kvclient.Get(strings.TrimPrefix(joinedKeys, "/"))
 	if err != nil {
 		log.Warnf("Error getting key %s %s, setting default %s", joinedKeys, err, defaultValue)
 		return defaultValue
